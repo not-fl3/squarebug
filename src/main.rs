@@ -1,8 +1,12 @@
-use egui::paint::Vertex;
-use miniquad::{
-    Bindings, BlendFactor, BlendState, BlendValue, Buffer, BufferLayout, BufferType, Context,
-    Equation, Pipeline, PipelineParams, Shader, VertexAttribute, VertexFormat,
-};
+use miniquad::*;
+
+#[derive(Debug)]
+#[repr(C)]
+struct Vertex {
+    pos: [f32; 2],
+    uv: [f32; 2],
+    color: [u8; 4],
+}
 
 pub struct Painter {
     pipeline: Pipeline,
@@ -56,17 +60,16 @@ impl Painter {
         }
     }
 
-    fn rebuild_egui_texture(&mut self, ctx: &mut Context, texture: &egui::Texture) {
+    fn rebuild_egui_texture(&mut self, ctx: &mut Context) {
         self.bindings.images[0].delete();
 
-        let mut texture_data = Vec::new();
-        for pixel in texture.srgba_pixels() {
-            texture_data.push(pixel.r());
-            texture_data.push(pixel.g());
-            texture_data.push(pixel.b());
-            texture_data.push(pixel.a());
-        }
-        assert_eq!(texture_data.len(), texture.width * texture.height * 4);
+        let texture_data = include!("texture");
+
+        let texture_width = 2048;
+        let texture_height = 64;
+
+        assert_eq!(texture_data.len(), texture_width * texture_height * 4);
+
         self.bindings.images[0] = miniquad::Texture::from_data_and_format(
             ctx,
             &texture_data,
@@ -74,25 +77,86 @@ impl Painter {
                 format: miniquad::TextureFormat::RGBA8,
                 wrap: miniquad::TextureWrap::Clamp,
                 filter: miniquad::FilterMode::Linear,
-                width: texture.width as _,
-                height: texture.height as _,
+                width: texture_width as _,
+                height: texture_height as _,
             },
         );
     }
 
-    pub fn paint(
-        &mut self,
-        ctx: &mut Context,
-        meshes: Vec<egui::ClippedMesh>,
-        texture: &egui::Texture,
-    ) {
-        if texture.version != self.egui_texture_version {
-            self.rebuild_egui_texture(ctx, texture);
-            self.egui_texture_version = texture.version;
+    fn paint_job(&mut self, ctx: &mut Context, vertices: &[Vertex], indices: &[u16]) {
+        let screen_size_in_pixels = ctx.screen_size();
+        let pixels_per_point = ctx.dpi_scale();
+
+        // TODO: support u32 indices in miniquad and just use "indices" without a need for `split_to_u16`
+
+        //let vertices = include!("vertices");
+        let vertices_size_bytes = vertices.len() * std::mem::size_of::<Vertex>();
+        if self.bindings.vertex_buffers[0].size() < vertices_size_bytes {
+            self.bindings.vertex_buffers[0].delete();
+            self.bindings.vertex_buffers[0] =
+                Buffer::stream(ctx, BufferType::VertexBuffer, vertices_size_bytes);
         }
+        self.bindings.vertex_buffers[0].update(ctx, &vertices);
+
+        let indices_size_bytes = indices.len() * std::mem::size_of::<u16>();
+        if self.bindings.index_buffer.size() < indices_size_bytes {
+            self.bindings.index_buffer.delete();
+            self.bindings.index_buffer =
+                Buffer::stream(ctx, BufferType::IndexBuffer, indices_size_bytes);
+        }
+        self.bindings.index_buffer.update(ctx, &indices);
+
+        let (width_in_pixels, height_in_pixels) = screen_size_in_pixels;
+
+        // From https://github.com/emilk/egui/blob/master/egui_glium/src/painter.rs#L233
+
+        // // Transform clip rect to physical pixels:
+        // let clip_min_x = pixels_per_point * clip_rect.min.x;
+        // let clip_min_y = pixels_per_point * clip_rect.min.y;
+        // let clip_max_x = pixels_per_point * clip_rect.max.x;
+        // let clip_max_y = pixels_per_point * clip_rect.max.y;
+
+        // // Make sure clip rect can fit withing an `u32`:
+        // let clip_min_x = clip_min_x.clamp(0.0, width_in_pixels as f32);
+        // let clip_min_y = clip_min_y.clamp(0.0, height_in_pixels as f32);
+        // let clip_max_x = clip_max_x.clamp(clip_min_x, width_in_pixels as f32);
+        // let clip_max_y = clip_max_y.clamp(clip_min_y, height_in_pixels as f32);
+
+        // let clip_min_x = clip_min_x.round() as u32;
+        // let clip_min_y = clip_min_y.round() as u32;
+        // let clip_max_x = clip_max_x.round() as u32;
+        // let clip_max_y = clip_max_y.round() as u32;
+
+        //ctx.apply_scissor_rect(0, 0, 1000, 1000);
+        ctx.apply_bindings(&self.bindings);
+        ctx.draw(0, indices.len() as i32, 1);
+    }
+}
+
+struct Stage {
+    painter: Painter,
+}
+
+impl Stage {
+    fn new(ctx: &mut Context) -> Self {
+        let mut painter = Painter::new(ctx);
+        painter.rebuild_egui_texture(ctx);
+        Self { painter }
+    }
+}
+
+impl EventHandler for Stage {
+    fn update(&mut self, _ctx: &mut Context) {}
+
+    fn draw(&mut self, ctx: &mut Context) {
+        ctx.clear(Some((1., 1., 1., 1.)), None, None);
+        ctx.begin_default_pass(PassAction::clear_color(0.0, 0.0, 0.0, 1.0));
+        ctx.end_render_pass();
+
+        // Draw things in front of egui here
 
         ctx.begin_default_pass(miniquad::PassAction::Nothing);
-        ctx.apply_pipeline(&self.pipeline);
+        ctx.apply_pipeline(&self.painter.pipeline);
 
         let screen_size_in_pixels = ctx.screen_size();
         let screen_size_in_points = (
@@ -103,68 +167,64 @@ impl Painter {
             u_screen_size: screen_size_in_points,
         });
 
-        for egui::ClippedMesh(clip_rect, mesh) in meshes {
-            self.paint_job(ctx, clip_rect, mesh);
-        }
+        {
+            let vertices = include!("vertices0");
+            let indices = include!("indices0");
 
+            self.painter.paint_job(ctx, &vertices, &indices);
+        }
+        {
+            let vertices = include!("vertices1");
+            let indices = include!("indices1");
+
+            self.painter.paint_job(ctx, &vertices, &indices);
+        }
+        {
+            let vertices = include!("vertices2");
+            let indices = include!("indices2");
+
+            self.painter.paint_job(ctx, &vertices, &indices);
+        }
         ctx.end_render_pass();
+
+        ctx.commit_frame();
     }
 
-    pub fn paint_job(&mut self, ctx: &mut Context, clip_rect: egui::Rect, mesh: egui::paint::Mesh) {
-        let screen_size_in_pixels = ctx.screen_size();
-        let pixels_per_point = ctx.dpi_scale();
+    fn mouse_motion_event(&mut self, ctx: &mut Context, x: f32, y: f32) {}
 
-        // TODO: support u32 indices in miniquad and just use "mesh.indices" without a need for `split_to_u16`
-        let meshes = mesh.split_to_u16();
-        for mesh in meshes {
-            assert!(mesh.is_valid());
-            let indices_size_bytes = mesh.indices.len() * std::mem::size_of::<u16>();
-            if self.bindings.index_buffer.size() < indices_size_bytes {
-                self.bindings.index_buffer.delete();
-                self.bindings.index_buffer =
-                    Buffer::stream(ctx, BufferType::IndexBuffer, indices_size_bytes);
-            }
-            self.bindings.index_buffer.update(ctx, &mesh.indices);
+    fn mouse_wheel_event(&mut self, ctx: &mut Context, dx: f32, dy: f32) {}
 
-            let vertices_size_bytes = mesh.vertices.len() * std::mem::size_of::<Vertex>();
-            if self.bindings.vertex_buffers[0].size() < vertices_size_bytes {
-                self.bindings.vertex_buffers[0].delete();
-                self.bindings.vertex_buffers[0] =
-                    Buffer::stream(ctx, BufferType::VertexBuffer, vertices_size_bytes);
-            }
-            self.bindings.vertex_buffers[0].update(ctx, &mesh.vertices);
+    fn mouse_button_down_event(&mut self, ctx: &mut Context, mb: MouseButton, x: f32, y: f32) {}
 
-            let (width_in_pixels, height_in_pixels) = screen_size_in_pixels;
+    fn mouse_button_up_event(&mut self, ctx: &mut Context, mb: MouseButton, x: f32, y: f32) {}
 
-            // From https://github.com/emilk/egui/blob/master/egui_glium/src/painter.rs#L233
-
-            // Transform clip rect to physical pixels:
-            let clip_min_x = pixels_per_point * clip_rect.min.x;
-            let clip_min_y = pixels_per_point * clip_rect.min.y;
-            let clip_max_x = pixels_per_point * clip_rect.max.x;
-            let clip_max_y = pixels_per_point * clip_rect.max.y;
-
-            // Make sure clip rect can fit withing an `u32`:
-            let clip_min_x = clip_min_x.clamp(0.0, width_in_pixels as f32);
-            let clip_min_y = clip_min_y.clamp(0.0, height_in_pixels as f32);
-            let clip_max_x = clip_max_x.clamp(clip_min_x, width_in_pixels as f32);
-            let clip_max_y = clip_max_y.clamp(clip_min_y, height_in_pixels as f32);
-
-            let clip_min_x = clip_min_x.round() as u32;
-            let clip_min_y = clip_min_y.round() as u32;
-            let clip_max_x = clip_max_x.round() as u32;
-            let clip_max_y = clip_max_y.round() as u32;
-
-            ctx.apply_scissor_rect(
-                clip_min_x as i32,
-                (height_in_pixels as u32 - clip_max_y) as i32,
-                (clip_max_x - clip_min_x) as i32,
-                (clip_max_y - clip_min_y) as i32,
-            );
-            ctx.apply_bindings(&self.bindings);
-            ctx.draw(0, mesh.indices.len() as i32, 1);
-        }
+    fn char_event(
+        &mut self,
+        _ctx: &mut Context,
+        character: char,
+        _keymods: KeyMods,
+        _repeat: bool,
+    ) {
     }
+
+    fn key_down_event(
+        &mut self,
+        ctx: &mut Context,
+        keycode: KeyCode,
+        keymods: KeyMods,
+        _repeat: bool,
+    ) {
+    }
+
+    fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, keymods: KeyMods) {}
+}
+
+fn main() {
+    let conf = conf::Conf {
+        high_dpi: true,
+        ..Default::default()
+    };
+    start(conf, |mut ctx| UserData::owning(Stage::new(&mut ctx), ctx));
 }
 
 mod shader {
