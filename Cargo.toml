@@ -12,5 +12,5 @@ categories = ["gui", "game-development"]
 keywords = ["gui", "imgui", "immediate", "portable", "gamedev"]
 
 [dependencies]
-miniquad = { version = "=0.3.0-alpha.30" }
+miniquad = { git = "https://github.com/not-fl3/miniquad.git", branch = "windows_flicker_fix" }
 image = "*"
