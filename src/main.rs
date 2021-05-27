@@ -19,7 +19,6 @@ pub struct Vertex {
 pub struct Painter {
     pipeline: Pipeline,
     bindings: Bindings,
-    egui_texture_version: u64,
 }
 
 impl Painter {
@@ -61,11 +60,7 @@ impl Painter {
             images: vec![miniquad::Texture::empty()],
         };
 
-        Painter {
-            pipeline,
-            bindings,
-            egui_texture_version: 0,
-        }
+        Painter { pipeline, bindings }
     }
 
     fn rebuild_egui_texture(&mut self, ctx: &mut Context) {
@@ -95,9 +90,6 @@ impl Painter {
         let screen_size_in_pixels = ctx.screen_size();
         let pixels_per_point = ctx.dpi_scale();
 
-        // TODO: support u32 indices in miniquad and just use "indices" without a need for `split_to_u16`
-
-        //let vertices = include!("vertices");
         let vertices_size_bytes = vertices.len() * std::mem::size_of::<Vertex>();
         if self.bindings.vertex_buffers[0].size() < vertices_size_bytes {
             self.bindings.vertex_buffers[0].delete();
@@ -116,26 +108,6 @@ impl Painter {
 
         let (width_in_pixels, height_in_pixels) = screen_size_in_pixels;
 
-        // From https://github.com/emilk/egui/blob/master/egui_glium/src/painter.rs#L233
-
-        // // Transform clip rect to physical pixels:
-        // let clip_min_x = pixels_per_point * clip_rect.min.x;
-        // let clip_min_y = pixels_per_point * clip_rect.min.y;
-        // let clip_max_x = pixels_per_point * clip_rect.max.x;
-        // let clip_max_y = pixels_per_point * clip_rect.max.y;
-
-        // // Make sure clip rect can fit withing an `u32`:
-        // let clip_min_x = clip_min_x.clamp(0.0, width_in_pixels as f32);
-        // let clip_min_y = clip_min_y.clamp(0.0, height_in_pixels as f32);
-        // let clip_max_x = clip_max_x.clamp(clip_min_x, width_in_pixels as f32);
-        // let clip_max_y = clip_max_y.clamp(clip_min_y, height_in_pixels as f32);
-
-        // let clip_min_x = clip_min_x.round() as u32;
-        // let clip_min_y = clip_min_y.round() as u32;
-        // let clip_max_x = clip_max_x.round() as u32;
-        // let clip_max_y = clip_max_y.round() as u32;
-
-        //ctx.apply_scissor_rect(0, 0, 1000, 1000);
         ctx.apply_bindings(&self.bindings);
         ctx.draw(0, indices.len() as i32, 1);
     }

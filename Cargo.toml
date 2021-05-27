@@ -13,3 +13,4 @@ keywords = ["gui", "imgui", "immediate", "portable", "gamedev"]
 
 [dependencies]
 miniquad = { version = "=0.3.0-alpha.30" }
+image = "*"
