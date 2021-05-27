@@ -64,24 +64,22 @@ impl Painter {
     }
 
     fn rebuild_egui_texture(&mut self, ctx: &mut Context) {
-        self.bindings.images[0].delete();
+        let texture_data = include_bytes!("texture.png");
 
-        let texture_data = include!("texture");
-
-        let texture_width = 2048;
-        let texture_height = 64;
-
-        assert_eq!(texture_data.len(), texture_width * texture_height * 4);
+        let img = image::load_from_memory(texture_data).unwrap().to_rgba8();
+        let width = dbg!(img.width() as u16);
+        let height = dbg!(img.height() as u16);
+        let bytes = img.into_raw();
 
         self.bindings.images[0] = miniquad::Texture::from_data_and_format(
             ctx,
-            &texture_data,
+            &bytes,
             miniquad::TextureParams {
                 format: miniquad::TextureFormat::RGBA8,
                 wrap: miniquad::TextureWrap::Clamp,
                 filter: miniquad::FilterMode::Linear,
-                width: texture_width as _,
-                height: texture_height as _,
+                width: width as _,
+                height: height as _,
             },
         );
     }
