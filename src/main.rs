@@ -1,11 +1,19 @@
 use miniquad::*;
 
+mod vertices0;
+mod vertices1;
+mod vertices2;
+
+mod indices0;
+mod indices1;
+mod indices2;
+
 #[derive(Debug)]
 #[repr(C)]
-struct Vertex {
-    pos: [f32; 2],
-    uv: [f32; 2],
-    color: [u8; 4],
+pub struct Vertex {
+    pub pos: [f32; 2],
+    pub uv: [f32; 2],
+    pub color: [u8; 4],
 }
 
 pub struct Painter {
@@ -167,24 +175,13 @@ impl EventHandler for Stage {
             u_screen_size: screen_size_in_points,
         });
 
-        {
-            let vertices = include!("vertices0");
-            let indices = include!("indices0");
+        self.painter
+            .paint_job(ctx, &vertices0::VERTICES, &indices0::INDICES);
+        self.painter
+            .paint_job(ctx, &vertices1::VERTICES, &indices1::INDICES);
+        self.painter
+            .paint_job(ctx, &vertices2::VERTICES, &indices2::INDICES);
 
-            self.painter.paint_job(ctx, &vertices, &indices);
-        }
-        {
-            let vertices = include!("vertices1");
-            let indices = include!("indices1");
-
-            self.painter.paint_job(ctx, &vertices, &indices);
-        }
-        {
-            let vertices = include!("vertices2");
-            let indices = include!("indices2");
-
-            self.painter.paint_job(ctx, &vertices, &indices);
-        }
         ctx.end_render_pass();
 
         ctx.commit_frame();
